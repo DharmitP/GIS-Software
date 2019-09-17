@@ -1,0 +1,48 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+/* 
+ * File:   pathAlgorithms.h
+ * Author: maxingyu
+ *
+ * Created on March 19, 2017, 12:41 AM
+ */
+
+#ifndef PATHALGORITHMS_H
+#define PATHALGORITHMS_H
+#include <list>
+
+class waveElem {
+public:
+
+    unsigned id;
+    unsigned reachingedge;
+    double pathlen;
+    double priority;
+
+    waveElem(unsigned id_, unsigned re, double pa, double pr) {
+        id = id_;
+        reachingedge = re;
+        pathlen = pa;
+        priority = pr;
+    }
+};
+
+// set < operator
+bool operator<(const waveElem &a, const waveElem &b);
+std::vector<unsigned> a_starPath(unsigned start, unsigned destin, std::vector<unsigned> path1);
+
+//find the fastest way between two intersections
+unsigned findsegid(unsigned start, unsigned id1, unsigned id2);
+
+//calculate distance
+double caldistance(unsigned first,unsigned destin,double latAverage);
+
+//calculate travel time between two intersections  
+double travelTime(unsigned id1,unsigned id2,unsigned seg);
+
+#endif /* PATHALGORITHMS_H */
+

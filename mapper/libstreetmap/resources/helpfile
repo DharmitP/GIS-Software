@@ -1,0 +1,110 @@
+
+
+******************************* GIS-43 HELP *******************************
+
+(03.21.17)
+
+Welcome to GIS-43! This is a mapping application built for the ECE297 course at 
+the University of Toronto by team 043 (Daniyal Qureshi, Dharmit Patel, Xingyu Ma). 
+This help reference includes basic instructions for new users.
+
+
+
+--CONTROLS--
+
+A map is LOADED at the initial TERMINAL. Once the map is loaded, PANNING is done 
+by holding down the centre MOUSE SCROLL button while MOVING. ZOOMING is done 
+by using the MOUSE SCROLL (scroll UP for ZOOM IN, DOWN for ZOOM OUT). 
+
+
+
+--MAP--
+
+The NAMES of streets and points of interest are present at lower levels of zoom.
+Features are distinguished by colour.
+
+GEOGRAPHY is represented by:
+
+Colour			 | Type 
+----------------------------------------------------------------
+BLUE		 	-- WATERWAY (River, lake)
+LIGHT GREEN    		-- PARKS (Gardens, small parks)
+DARK GREEN     		-- GREENSPACE (Larger parks)
+PEACH			-- SHORE (Beachline)
+
+ROADS are represented by:
+
+Colour			 | Type 
+----------------------------------------------------------------
+WHITE		 	-- ROAD (Highway, side-road)
+ORANGE		   	-- MOTORWAY (Trunk, motorway)
+WHITE, DASHED  		-- TRACK (Footpath)
+
+
+
+--INTERFACE--
+
+There are two primary modes, SEARCH and DIRECTIONS. Search mode allows the user
+to find specific intersections, streets & points of interest while directions
+mode allows the user to find the quickest path from a certain intersection to 
+a point of interest or another intersection. 
+
+By DEFAULT, SEARCH is selected but the mode can be selected by pressing the 
+branch (directions) or magnifying glass (search) buttons to the right of the
+searchbar at the top-left of the GUI.
+
+Whenever the user CLICKS on the map in search mode, a marker will be dropped 
+at that location and informative details will be printed out to console. In 
+directions mode, by clicking on another location after that, the shortest 
+path will be displayed to get from the previous location to this new one.
+Pressing the screen twice will erase the marker.
+
+
+
+--SEARCHBAR & SIDEBAR BUTTONS--
+
+In search or directions mode, the user may select what they are searching for 
+by pressing the buttons directly below the searchbar. The ROAD indicates 
+STREET, the FLAG indicates POINTS OF INTEREST and the CROSSING ARROWS indicate
+INTERSECTION. 
+
+To begin a search, the user can CLICK onto the searchbar and begin typing. The
+search will begin once the user presses the ENTER key - if the feature is found
+it will be drawn on the screen. If not, an error message will be printed.
+
+To begin a directions search, the user can CLICK on the searchbar and begin 
+typing their starting INTERSECTION. The user presses ENTER and then they can
+continue typing their DESTINATION. The user presses ENTER again and the 
+quickest path between two points with the specified names will be drawn if they
+are found. If not, an error message will be printed. 
+
+Streets and points of interest are inputted by their name. To TYPE an
+INTERSECTION, enter the streets which intersect there, separated by ampersand 
+(&): e.g. 'St. George Street & College Street'. 
+
+
+
+--POINTS OF INTEREST & FILTERING--
+
+Points of interest are depicted by icons on the map. The type of landmark is
+specified by the icon displayed:
+
+Icon			 | Type 
+----------------------------------------------------------------
+SPOON & MUG 		-- RESTAURANT (Cafes, fast food, bars)
+BUS         		-- BUSSTOP (Transit)
+CROSS       		-- HEALTHCARE (Pharmacies, hospitals, clinics)
+LETTER      		-- POST (Post offices)
+PRAYING 		-- PLACE OF WORSHIP (Temples, churches, mosques)
+BOOK			-- EDUCATION (Libraries, schools, colleges)
+CIRCLE			-- MISCELLANEOUS 
+
+To change what type of points of interest the user wants to display onscreen,
+press the FILTER button (flag with gear, below HELP button). The current icons
+being DISPLAYED will be highlighted in BLUE; to toggle them simply press the 
+icon. Press a HIDDEN icon to show it again. To close this menu, press the GO 
+(blue ARROW) button at the bottom. 
+
+
+****************************************************************************
+

@@ -1,0 +1,95 @@
+#include <iostream>
+#include <string>
+#include <StreetsDatabaseAPI.h>
+#include "LatLon.h"
+#include "OSMDatabaseAPI.h"
+#include "m1.h"
+#include "m2.h"
+#include "m3.h"
+#include "m4.h"
+
+using namespace std;
+//bool stopMap = false;
+bool Path_check;
+bool OSM_check;
+string map_path;
+string map_OSM;
+string city_name;
+
+int main() {
+
+//   do {
+//        
+//        cout << "Please enter the name of the city in which you want to see, " << endl;
+//        cout << "or enter 'exit' to exit: ";
+//        
+//        cin >>city_name;
+//        
+//        if(city_name == "a"){
+//            city_name = "toronto_canada";
+//        }
+//
+//        map_path = "/cad2/ece297s/public/maps/" + city_name + ".streets.bin";
+//        map_OSM = "/cad2/ece297s/public/maps/" + city_name + ".osm.bin";
+//        
+//
+//        bool osmCheck;
+//        bool load_success = load_map(map_path);
+//        
+//        if(load_success)
+//            osmCheck = loadOSMDatabaseBIN(map_OSM);
+//        
+//        if(load_success && osmCheck){
+//            draw_map();
+//            close_map();
+//            continue;
+//        }
+//        
+//        if(city_name == "exit")
+//            return 0;
+//        else
+//            cout << "The city name that you entered does not exist!" << endl;
+//         
+//    } while (1);
+//        
+//    return 0;
+//}
+
+    load_map("/cad2/ece297s/public/maps/london_england.streets.bin");
+    
+    std::minstd_rand rng;
+    std::uniform_int_distribution<unsigned> rand_intersection;
+    std::uniform_int_distribution<unsigned> rand_street;
+    std::uniform_int_distribution<unsigned> rand_segment;
+    std::uniform_int_distribution<unsigned> rand_poi;
+    std::uniform_real_distribution<double> rand_lat;
+    std::uniform_real_distribution<double> rand_lon;
+    std::uniform_real_distribution<double> rand_turn_penalty;
+
+    rng = std::minstd_rand(4);
+    rand_intersection = std::uniform_int_distribution<unsigned>(0, getNumberOfIntersections() - 1);
+    rand_street = std::uniform_int_distribution<unsigned>(1, getNumberOfStreets() - 1);
+    rand_segment = std::uniform_int_distribution<unsigned>(0, getNumberOfStreetSegments() - 1);
+    rand_poi = std::uniform_int_distribution<unsigned>(0, getNumberOfPointsOfInterest() - 1);
+    rand_lat = std::uniform_real_distribution<double>(50.94104, 51.984);
+    rand_lon = std::uniform_real_distribution<double>(-1.114989, 0.8949982);
+    rand_turn_penalty = std::uniform_real_distribution<double>(0., 30.);
+
+    std::vector<unsigned> intersection_ids1;
+    std::vector<unsigned> intersection_ids2;
+    std::vector<double> turn_penalties;
+    for (size_t i = 0; i < 100; i++) {
+        intersection_ids1.push_back(rand_intersection(rng));
+        intersection_ids2.push_back(rand_intersection(rng));
+        turn_penalties.push_back(rand_turn_penalty(rng));
+    }
+    std::vector<unsigned> result;
+    for (size_t i = 0; i < 100; i++) {
+        result = find_path_between_intersections(intersection_ids1[i], intersection_ids2[i], turn_penalties[i]);
+    }
+    
+    close_map();
+    return 0;
+
+    
+}

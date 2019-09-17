@@ -1,0 +1,810 @@
+#include "m1.h"
+#include "StreetsDatabaseAPI.h"
+#include "m3.h"
+#include "m4.h"
+#include <unordered_map>  
+#include <iostream>  
+#include <algorithm>  
+#include <chrono>  
+#include <ctime>  
+#include <limits>  
+#include <future>
+#include <thread>
+#include <functional>
+
+using namespace std;
+//This will the time we allocate for calculating each potential combination (in seconds)
+#define ALGORITHM_TIME 25.00
+#define BRANCH_CHANCE 0
+#define EMPTY std::numeric_limits<unsigned int>::infinity()
+#define INFINITY std::numeric_limits<double>::infinity()
+
+extern vector<LatLon> intersection_positions;
+
+//The initiation of our function time
+chrono::time_point<chrono::system_clock> start;
+
+//This will store all possible combinations of time/paths between all supplies/dropoffs
+//We will process this all at once near the beginning so as to not to have to constantly
+//calculate each path via Dijkstra's algorithm
+vector<vector<pair<double, vector<unsigned>>>> travel_times;
+
+vector<vector<double>> path_times;
+vector<vector<vector<unsigned>>> paths;
+std::vector<unsigned> allLocations;
+
+//Stores the number of deliveries (size of pickup/delivery)
+unsigned noDeliveries = 0;
+
+//"Fun"-ction for threading
+pair<double, vector<unsigned>> distance_time (unsigned current_id, unsigned id, double turn_penalty);
+
+//This function will create a valid reordering of our older combination of locations
+void permutate(vector<pair<unsigned, int>>&old);
+
+//This will be our calculation of each path given an initial ordering
+vector<unsigned> perturbate_path(vector<pair<unsigned, int>>&order, const vector<unsigned>& depots);
+
+//Alternative algorithm using greedy search
+std::pair<double, std::vector<unsigned>> greedy_path(const std::vector<unsigned> & pickup,
+        const std::vector<unsigned> & dropoff,
+        const std::vector<unsigned> & depots,
+        double turn_penalty,
+        bool runAlt);
+
+void load_paths(double depotSize, double turn_penalty);
+
+void load_path_times(double depotSize);
+
+//Actual function for the problem
+
+vector<unsigned> traveling_courier(const vector<DeliveryInfo>& deliveries,
+        const vector<unsigned>& depots,
+        const float turn_penalty) {
+    noDeliveries = deliveries.size();
+    
+    //This will be the initial point; we begin our clock here to ensure we finish on time
+    start = chrono::system_clock::now();
+
+    //    cout << "Howdy! We're startin' the function!\n";
+
+    //Vectors to store intersection ids for pickup and dropoff locations
+    vector<unsigned> pickup(deliveries.size(), 0);
+    vector<unsigned> dropoff(deliveries.size(), 0);
+    vector<pair<unsigned, int>> order(deliveries.size() * 2);
+    allLocations.resize(noDeliveries*2 + depots.size());
+    vector<int> OGPathID;
+    vector<pair<unsigned, int>> OGPathPair(deliveries.size() * 2);
+
+    vector<unsigned> OGPath;
+
+    //Store pickup and dropoff locations
+#pragma omp parallel for
+    for (unsigned i = 0; i < deliveries.size(); i++) {
+        pickup[i] = deliveries[i].pickUp;
+        dropoff[i] = deliveries[i].dropOff;
+        allLocations[i] = deliveries[i].pickUp;
+        order[i].first = deliveries[i].pickUp;
+        order[i].second = i + 1;
+    }
+#pragma omp parallel for
+    for (unsigned i = deliveries.size(); i < deliveries.size() * 2; i++) {
+        allLocations[i] = deliveries[i - deliveries.size()].dropOff;
+        order[i].first = deliveries[i - deliveries.size()].dropOff;
+        order[i].second = -(i - deliveries.size() + 1);
+    }
+    
+    
+//    auto begin_init = std::chrono::system_clock::now();
+//    
+//    std::vector<std::vector<std::vector<unsigned>>> connect_paths; 
+//    std::vector<std::vector<double>> connect_times;
+//    
+//    std::vector<std::thread> threads;
+//    
+//    const unsigned no_threads = std::thread::hardware_concurrency();
+//    cout << "We have " << no_threads << " to work with.\n";
+//    
+//    unsigned no_ints = deliveries.size()*2 + depots.size();
+//    
+//    connect_paths.resize(no_ints);
+//    connect_times.resize(no_ints);
+//    
+//    for (unsigned i = 0; i < no_ints; i++) {
+//        threads.emplace_back([&, i](){
+//            connect_paths[i].resize(no_ints);
+//            connect_times[i].resize(no_ints);
+//            for (unsigned j = 0; j < no_ints; j++) {
+//                unsigned id_i;
+//                unsigned id_j;
+//
+//                //Grab the id depending on where it is in the matrix
+//                if (i >= noDeliveries) {
+//                    if (i >= noDeliveries*2)
+//                        id_i = depots[i - noDeliveries*2];
+//                    else
+//                        id_i = dropoff[i - noDeliveries];
+//                }
+//                else 
+//                    id_i = pickup[i];
+//
+//                if (j >= noDeliveries) {
+//                    if (j >= noDeliveries*2)
+//                        id_j = depots[j - noDeliveries*2];
+//                    else
+//                        id_j = dropoff[j - noDeliveries];
+//                }
+//                else 
+//                    id_j = pickup[j];
+//
+//                connect_paths[i][j] = find_path_between_intersections(id_i, id_j, turn_penalty);
+//                connect_times[i][j] = compute_path_travel_time(connect_paths[i][j], turn_penalty);
+//            }
+//        });
+//    }
+//    
+//    for (unsigned i = 0; i < no_ints; i++){
+//        threads[i].join();
+//    }
+//    
+//    auto end_init = std::chrono::system_clock::now();
+//    std::chrono::duration<double> elapsed_init = end_init - begin_init;
+// 
+//    cout << "Initialization takes " << elapsed_init.count() << ".\n";
+//
+#pragma omp parallel for
+    for(unsigned i = noDeliveries*2; i < allLocations.size(); i++){
+        allLocations[i] = depots[i - noDeliveries*2];
+    }
+    
+    std::thread t1(load_paths, depots.size(), turn_penalty);
+    std::thread t2(load_path_times, depots.size());
+    t1.join();
+    t2.join();
+//    ////////////////////////////BASIC PATH///////////////////////////////
+//
+//    unsigned depot1;
+//    int minDist = INFINITY;
+//    
+//    for(unsigned i = 0; i < depots.size(); i++){
+//        int distance = 0;
+//        vector<unsigned> paths;
+//        paths = find_path_between_intersections(pickup[0], depots[i], turn_penalty);
+//        distance = compute_path_travel_time(paths, turn_penalty);
+//        if(distance == 0){
+//            
+//        }
+//        else{
+//            if(distance < minDist){
+//                minDist = distance;
+//                depot1 = depots[i];
+//            }
+//        }
+//    }
+//    
+//    OGPath.push_back(depot1);
+//
+//
+//    for (unsigned i = 0; i < deliveries.size(); i++) {
+//        OGPath.push_back(deliveries[i].pickUp);
+//        OGPath.push_back(deliveries[i].dropOff);
+//    }
+//
+//    unsigned depot2;
+//    minDist = INFINITY;
+//    
+//    for(unsigned i = 0; i < depots.size(); i++){
+//        int distance = 0;
+//        vector<unsigned> paths;
+//        paths = find_path_between_intersections(pickup[pickup.size() - 1], depots[i], turn_penalty);
+//        distance = compute_path_travel_time(paths, turn_penalty);
+//        if(distance == 0){
+//            
+//        }
+//        else{
+//            if(distance < minDist){
+//                minDist = distance;
+//                depot2 = depots[i];
+//            }
+//        }
+//    }
+//    
+//    OGPath.push_back(depot2);
+    
+//    for(unsigned i = 1; i < deliveries.size() * 2 + 1; i++){
+//        OGPathPair[i].first = OGPath[i];
+//        OGPathPair[i].second = OGPathID[i];
+//    }
+    
+    ///////////////////////////////////////////////////////////////////
+
+
+    ////////////////////////////////////////////////////////////////////
+
+
+    //    for(unsigned i = 1; i < deliveries.size() + 1; i++){
+    //        if(1){
+    //            OGPath[i] = deliveries[i-1].pickUp;
+    //            OGPath[i + 1] = deliveries[i-1].dropOff;
+    //        } 
+    //    }
+    //    
+    //    for(unsigned i = 0; i < OGPath.size(); i++){
+    //        cout << OGPath[i] << endl;
+    //    }
+    //    
+    //    OGPath.insert(OGPath.begin(), depots[0]);
+    //    OGPath.insert(OGPath.end(), depots[1]);
+
+
+//
+//    vector<unsigned> OGPathsegments;
+//
+//    for (unsigned i = 1; i < OGPath.size(); i++) {
+//        vector<unsigned> OGP = find_path_between_intersections(OGPath[i - 1],
+//                OGPath[i],
+//                turn_penalty);
+//        OGPathsegments.insert(OGPathsegments.end(), OGP.begin(), OGP.end());
+//    }
+
+
+
+    //cout << "Initialized the deliveries! We're on the road!\n";
+
+    //GREEDY IMPLEMENTATION
+
+    //    vector<unsigned> path = greedy_path(pickup, dropoff, depots, turn_penalty);
+    //    return path;
+
+    //UNCOMMENT THIS PART
+
+//        //Create a single vector containing all pickup, dropoff, and depot locations    
+//        vector<unsigned>   AB;
+//        AB.reserve(pickup.size() + dropoff.size()); // preallocate memory
+//        AB.insert(AB.end(), pickup.begin(), pickup.end());
+//        AB.insert(AB.end(), dropoff.begin(), dropoff.end());
+//        vector<unsigned>   allLocations;
+//        allLocations.reserve(AB.size() + depots.size());
+//        allLocations.insert(allLocations.end(), AB.begin(), AB.end());
+//        allLocations.insert(allLocations.end(), depots.begin(), depots.end());
+//        
+//        travel_times.resize(allLocations.size());
+//        
+//        
+//        /*
+//     * Initialize our travel time vector here
+//     * First in pair is travel time, second is the path
+//     */
+//
+//    for (unsigned i = 0; i < allLocations.size(); i++) {
+//        travel_times[i].resize(allLocations.size());
+//        for (unsigned j = 0; j < allLocations.size(); j++) {
+//            travel_times[i][j].second = find_path_between_intersections(allLocations[i], allLocations[j], turn_penalty);
+//            travel_times[i][j].first = compute_path_travel_time(travel_times[i][j].second, turn_penalty);
+//        }
+//    }
+
+
+    //cout << "The travel times...yep, they're all set!\n";
+
+    // UNCOMMENT EVERYTHING PAST THIS PART
+
+    /*
+     * We have obtained one possible order above ^
+     * Make some more random valid orders and send them into "threads"
+     * Call the perturbate_path() function for each
+     */
+
+    //UNCOMMENT THIS
+    //pair<double,vector<unsigned>> best_path_found = perturbate_path(order, depots);
+    //vector<unsigned> best_path_found = perturbate_path(order, depots);
+    //vector<unsigned> best_path_found = perturbate_path(order, depots);
+
+
+//            paths1 = paths[i + noDeliveries * 2][best_path_found.second[0]];
+//            distance1 = compute_path_travel_time(paths1, turn_penalty);
+//            paths2 = paths[best_path_found.second[best_path_found.second.size()]][j];
+//            distance2 = compute_path_travel_time(paths2, turn_penalty);
+//            if (distance1 != 0) {
+//                minDist1 = distance1;
+//                depot1 = depots[i];
+//            }
+//            if (distance2 != 0) {
+//                minDist2 = distance2;
+//                depot2 = depots[i];
+//            }
+
+//    best_path_found.second.insert(best_path_found.second.begin(), paths1.begin(), paths1.end());
+//    best_path_found.second.insert(best_path_found.second.end(), paths2.begin(), paths2.end());
+    //cout << "Holy cow! You mean we actually got the function too?! \n";
+
+    /*
+     * Given the best from all our threads, we must then compare their travel 
+     * times (first in the pair) and pick the best
+     * 
+     * After that retrieve the path (second in the pair) and return it 
+     * 
+     */
+
+    //UNCOMMENT THIS
+    //cout << "Best path we found takes " << best_path_found.first << "\n";
+
+    //UNCOMMENT THIS
+    //Break off into another thread
+    std::packaged_task<std::pair<double, std::vector<unsigned>>()> run1 (std::bind(greedy_path, pickup, dropoff, depots, turn_penalty, true)); 
+    auto f1 = run1.get_future();  // f1 is a pair 
+
+    std::thread creative_name(std::move(run1));
+    creative_name.detach();       
+
+    std::pair<double, std::vector<unsigned>> path2 = greedy_path(pickup, dropoff, depots, turn_penalty, false);
+    
+    auto path1 = f1.get();    
+    
+    if (path1.first > path2.first)
+        return path2.second;
+    return path1.second;
+    
+//    travel_times.clear();
+//    noDeliveries = 0;
+    
+//    vector<unsigned> OGPathsegments;
+//    
+////    for (unsigned i = 1; i < OGPath.size(); i++) {
+////        vector<unsigned> OGP = find_path_between_intersections(OGPath[i - 1],
+////                best_path_found[i],
+////                turn_penalty);
+////        OGPathsegments.insert(OGPathsegments.end(), OGP.begin(), OGP.end());
+////    }
+//
+//    for (unsigned i = 1; i < OGPath.size(); i++) {
+//        vector<unsigned> OGP = find_path_between_intersections(OGPath[i - 1],
+//                OGPath[i],
+//                turn_penalty);
+//        OGPathsegments.insert(OGPathsegments.end(), OGP.begin(), OGP.end());
+//    }
+
+//    for (unsigned i = 1; i < order.size() - 1; i++) {
+//        OGPath[i] = order[i].first;
+//    }
+    
+    //UNCOMMENT THIS
+//    return best_path_found.second;
+
+    //return OGPathsegments;
+  //  return path;
+    
+}
+
+//2 opt algorithm where we check each combination and return the best we can given the time
+
+vector<unsigned> perturbate_path(vector<pair<unsigned, int>>&order, const vector<unsigned>& depots) {
+
+    /*
+     * We want to run it for 30s, intially without multithreading, and then after
+     * the 30s, we will have the most optimized path so far
+     */
+    chrono::time_point <chrono::system_clock> currentTime = chrono::system_clock::now();
+    chrono::duration<double> elapsed = currentTime - start;
+
+    bool first_run = true;
+    unsigned firstIntersection = 0;
+    unsigned lastIntersection = 0;
+
+    //First holds shortest time, second holds shortest path
+    pair < double, vector < unsigned>> shortest_path;
+
+    //    cout << "Are we at least...here?\n";
+
+    //Keep permutating and checking our order as long as we have time
+    do {
+
+        double time_current_path = 0;
+        vector<unsigned> current_path;
+
+        firstIntersection = order[0].second - 1;
+
+        //time_current_path += travel_times[noDeliveries * 2][firstIntersection].first;
+        time_current_path += path_times[noDeliveries * 2][firstIntersection];
+        //    cout << "time = " << travel_times[noDeliveries*2][firstIntersection].first << "\n"; 
+        current_path.insert(current_path.end(), (paths[noDeliveries * 2][firstIntersection]).begin(), (paths[noDeliveries * 2][firstIntersection]).end());
+
+        //Go through the order, calculate the travel time 
+        for (unsigned i = 0; i < order.size() - 1; i++) {
+
+            //            cout << "C'mon man...iteration " << i << "\n";
+            //Grab the time and distance from this intersection to the next 
+
+            //Get the indices inside the pickup, dropoff vectors
+            int current = order[i].second;
+            if (current < 0) {
+                current = current * -1;
+                current = current + noDeliveries;
+            }
+            //            cout << "Yeee, A\n";
+            current--;
+            int next = order[i + 1].second;
+            if (next < 0) {
+                next = next * -1;
+                next = next + noDeliveries;
+            }
+            next--;
+
+            //            cout << "Okay, what the hell - the matrix says for time we're: " << travel_times[current][next].first << "\n";
+
+            time_current_path += path_times[current][next];
+            current_path.insert(current_path.end(), (paths[current][next]).begin(), (paths[current][next]).end());
+
+        }
+
+        //       cout << "Got here\n";
+
+        lastIntersection = -1 * (order[order.size() - 1].second) + noDeliveries - 1;
+
+        //      cout << "This operation was done\n";
+
+        time_current_path += path_times[lastIntersection][noDeliveries * 2];
+        //      cout << "time = " << travel_times[lastIntersection][noDeliveries*2].first << "\n"; 
+        current_path.insert(current_path.end(), (paths[lastIntersection][noDeliveries * 2]).begin(), (paths[lastIntersection][noDeliveries * 2]).end());
+
+        //At this point, we now have the time and path for this combination
+        //We must now check to see if this is our best path
+
+        //For our very first default combination
+        if (first_run) {
+            shortest_path.second = current_path;
+            shortest_path.first = time_current_path;
+            first_run = false;
+            cout << "Fastest path currently takes " << shortest_path.first << "\n";
+        }            //Otherwise
+        else {
+            //If this permutation is faster than our quickest one, we'll use this
+            if (time_current_path < shortest_path.first) {
+                shortest_path.second = current_path;
+                shortest_path.first = time_current_path;
+                //cout << "Fastest path currently takes " << shortest_path.first << "\n";
+            }
+        }
+
+        //Now that we've gone through and checked this permutation
+        //We should now permutate again and continue
+        permutate(order);
+
+        //Where are we in terms of time?
+        //Let's make sure we're below the time limit!
+        currentTime = chrono::system_clock::now();
+        elapsed = currentTime - start;
+
+        //Don't forget the depots... :(
+        //Don't forget the validity... :'(
+
+    } while (elapsed.count() <= ALGORITHM_TIME);
+
+    //    cout << "We are now attempting to insert the depots\n";
+    
+    vector<unsigned> shortestPath = shortest_path.second;
+    
+
+    //After we've exhausted our allocated time, just send our best back
+    return shortestPath;
+
+}
+
+//Permutation function
+
+void permutate(vector<pair<unsigned,int>>& old) {
+    //vector<unsigned>   new_order;
+
+    /*
+     * First step: We need to permutate the damn thing!
+     * 
+     * To do this, we'll need to loop through the damn thing 
+     */
+    for (unsigned i = 0; i < old.size() - 1; i++) {
+        for (unsigned j = i + 1; j < old.size(); j++) {
+            if (abs(old[i].second) == abs(old[j].second))
+                break;
+            else if (old[i].second < 0 || old[j].second > 0) {
+                auto temp = old[i];
+                old[i] = old[j];
+                old[j] = temp;
+            }
+        }
+    }
+}
+
+std::pair<double, std::vector<unsigned>> greedy_path(const std::vector<unsigned> & pickup,
+        const std::vector<unsigned> & dropoff,
+        const std::vector<unsigned> & depots,
+        double turn_penalty,
+        bool runAlt) {
+
+
+    vector<unsigned> current_path;
+    double time_travel_path = 0;
+
+
+    // UNCOMMENT THIS...MAYBE?
+    //    unsigned indexClosest = 0;
+    //    unsigned closestDepot = depots[0];
+    //    unsigned closestPickup = pickup[0];
+    //    double timeClosest = INFINITY;
+    //    vector<unsigned>   pathClosest = {};
+    //    
+    //    //1) Find the closest depot to an intersection
+    //    for (unsigned i = 0; i < depots.size(); i++){
+    //        for (unsigned j = 0; j < pickup.size(); j++){
+    //            auto path = find_path_between_intersections(depots[i], pickup[j], turn_penalty);
+    //            auto time = compute_path_travel_time(path, turn_penalty);
+    //            
+    //            if (time < timeClosest){
+    //                
+    //                timeClosest = time;
+    //                pathClosest = path;
+    //                closestDepot = depots[i];
+    //                closestPickup = pickup[j];
+    //                indexClosest = j;
+    //            }
+    //        }
+    //    }
+
+    unsigned indexClosest = 0;
+    unsigned closestDepot = depots[0];
+    unsigned closestPickup = pickup[0];
+    double timeClosest = INFINITY;
+    double distClosest = INFINITY; 
+    double curDist = 0;
+    vector<unsigned>   pathClosest = {};
+
+    for (unsigned i = 0; i < depots.size(); i++) {
+#pragma omp parallel for num_threads(8)
+        for (unsigned j = 0; j < pickup.size(); j++) {
+            
+            curDist = find_distance_between_two_points(intersection_positions[depots[i]], intersection_positions[pickup[j]]);
+            
+            if (curDist < distClosest) {
+                auto path = find_path_between_intersections(depots[i], pickup[j], turn_penalty);
+                auto time = compute_path_travel_time(path, turn_penalty); 
+
+    //            auto path = travel_times[i + pickup.size()*2][j].second;
+    //            auto time = travel_times[i + pickup.size()*2][j].first;
+
+                if (time < timeClosest && time != 0) {
+                    distClosest = curDist;
+                    timeClosest = time;
+                    pathClosest = path;
+                    closestDepot = depots[i];
+                    closestPickup = pickup[j];
+                    indexClosest = j;
+                }
+            }
+        }
+    }
+
+    //2) Let's start from the SECOND closest depot...lol what? Sorry, haha
+
+    time_travel_path += timeClosest;
+    current_path.insert(current_path.end(), pathClosest.begin(), pathClosest.end());
+
+
+    //Starts off with only pickups
+    vector<unsigned> toVisit = pickup;
+    //Keep track of what is a pickup what is a dropoff
+    vector<bool> is_dropoff(pickup.size(), false);
+
+    unsigned isc = indexClosest;
+    unsigned scp = closestPickup;
+
+    //Since we already made a pickup, replace it with its corresponding dropoff
+    toVisit[isc] = dropoff[isc];
+    is_dropoff[isc] = true;
+
+
+    unsigned current_index = indexClosest;
+    unsigned current_id = scp;
+
+    //Once a pickup is made, add its corresponding dropoff
+    //Once a dropoff is made, set it to EMPTY
+
+    unsigned items_remaining = pickup.size();
+
+    while (items_remaining) {
+
+        double min_time = INFINITY;
+        unsigned closest_index = 0;
+        vector<unsigned>   min_path;
+           
+        //We will roughly rank the closest geographic destinations
+        double rank_1st_distance = -1;
+        int index1st = -1;
+        unsigned id1st = 0;
+        bool drop1st = false;
+        double rank_2nd_distance = -1;
+        int index2nd = -1;
+        unsigned id2nd = 0;
+        bool drop2nd = false;
+        
+        for (unsigned i = 0; i < toVisit.size(); i++){
+            
+           //cout << toVisit[i] << " ";
+            
+            //Check if this is empty
+            if (toVisit[i] == EMPTY) {
+            }                //If not, compare distance
+            else {
+                unsigned id = pickup[i];
+                if (is_dropoff[i])
+                    id = dropoff[i];
+
+                double dist = find_distance_between_two_points(intersection_positions[current_id], intersection_positions[id]);
+                if (rank_1st_distance == -1 || dist < rank_1st_distance) {
+                    rank_2nd_distance = rank_1st_distance;
+                    index2nd = index1st;
+                    id2nd = id1st;
+                    drop2nd = drop1st;
+                    rank_1st_distance = dist;
+                    index1st = i;
+                    id1st = id;
+                    drop1st = is_dropoff[i];
+                }
+                
+                
+//                
+//                vector<unsigned> path;
+//                double time;
+//                if (is_dropoff[i]) {
+//                    path = travel_times[current_index][i + pickup.size()].second;
+//                    time = travel_times[current_index][i + pickup.size()].first;                   
+//                }
+//                else {
+//                    path = travel_times[current_index][i].second;
+//                    time = travel_times[current_index][i].first;                   
+//                                    
+//                }
+////                
+////                auto path = find_path_between_intersections(current_id, id, turn_penalty);
+////                auto time = compute_path_travel_time(path, turn_penalty);
+//                
+//                //Check the size of the path to confirm its not empty 
+//                if (time < min_time) {
+//                    min_time = time;
+//                    min_path = path;
+//                    closest_index = i;
+//                }
+            }
+        }
+
+  //      cout << "\n\n\n";
+        
+        double minTop = INFINITY;
+        
+
+        //Break off into another thread
+        packaged_task<pair<double, vector<unsigned>>()> run1 (bind(distance_time, current_id, id1st, turn_penalty)); 
+        auto f1 = run1.get_future();  // f1 is a pair 
+        
+        thread creative_name(move(run1));
+        creative_name.detach();       
+        
+        vector<unsigned> path2nd;
+        double time2nd;
+        
+        if (index2nd > 0) {
+            path2nd = find_path_between_intersections(current_id, id2nd, turn_penalty);
+            time2nd = compute_path_travel_time(path2nd, turn_penalty);        
+        }
+                        
+        auto recieved = f1.get();
+        min_time = recieved.first;
+        min_path = recieved.second;
+        
+        //Generate a random number
+        //A BRANCH_CHANCE% chance that we will select the second best route
+        int probability = 1;
+        if (!runAlt)
+            probability = rand() % 10;
+        
+        closest_index = index1st;
+        if (min_time != 0)
+            minTop = min_time;
+        if (index2nd > 0 ){
+            if (time2nd != 0 && (probability > BRANCH_CHANCE && time2nd < minTop) || (probability <= BRANCH_CHANCE && time2nd > minTop)) {
+                min_time = time2nd;
+                min_path = path2nd;
+                closest_index = index2nd;
+            }      
+        }
+        
+   //     cout << "Fastest time is now " << min_time << "\n";
+     //   cout << "Closest index is now " << closest_index << "\n";
+
+        //Now that we have the closest next intersection remove it and set it as current
+        current_id = toVisit[closest_index];
+        current_index = closest_index;
+        if (is_dropoff[closest_index])
+            current_index += pickup.size();
+        time_travel_path += min_time;
+        current_path.insert(current_path.end(), min_path.begin(), min_path.end());
+
+        //If this a dropoff, set it to empty
+        if (is_dropoff[closest_index]) {
+            toVisit[closest_index] = EMPTY;
+            items_remaining--;
+        }            //If this is a pickup, replace it with its dropoff
+        else {
+            is_dropoff[closest_index] = true;
+            toVisit[closest_index] = dropoff[closest_index];
+        }
+
+    }
+
+    //We are now at the final dropoff
+
+    //3) Find the closest depot to finish
+    double min_time = INFINITY;
+    distClosest = INFINITY;
+    curDist = 0;
+    unsigned closest_index = 0;
+    vector<unsigned> min_path;
+//#pragma omp parallel for 
+    for (unsigned i = 0; i < depots.size(); i++) {
+        
+//        auto path = travel_times[current_index][i + pickup.size()*2].second;
+//        auto time = travel_times[current_index][i + pickup.size()*2].first;
+        
+        
+        curDist = find_distance_between_two_points(intersection_positions[current_id], intersection_positions[depots[i]]);
+
+        if (curDist < distClosest) {
+            auto path = find_path_between_intersections(current_id, depots[i], turn_penalty);
+            auto time = compute_path_travel_time(path, turn_penalty);
+
+//            auto path = travel_times[i + pickup.size()*2][j].second;
+//            auto time = travel_times[i + pickup.size()*2][j].first;
+
+            if (time < min_time && time != 0) {
+                distClosest = curDist;
+                min_time = time;
+                min_path = path;
+                closest_index = i;
+            }
+        }        
+
+    }
+
+    time_travel_path += min_time;
+    current_path.insert(current_path.end(), min_path.begin(), min_path.end());
+
+
+    //Our path is complete
+    return {time_travel_path, current_path};
+
+}
+
+
+//"Fun"-ction for threading
+pair<double, vector<unsigned>> distance_time (unsigned current_id, unsigned id, double turn_penalty) {
+    auto min_path = find_path_between_intersections(current_id, id, turn_penalty);
+    return {compute_path_travel_time(min_path, turn_penalty), min_path};
+}
+
+
+void load_paths(double depotSize, double turn_penalty){
+    paths.resize(noDeliveries*2 + depotSize);
+    for (unsigned i = 0; i < allLocations.size(); i++) {
+        paths[i].resize(noDeliveries*2 + depotSize);
+        for(unsigned j = 0; j < allLocations.size(); j++){
+            paths[i][j] = find_path_between_intersections(allLocations[i], allLocations[j], turn_penalty);
+        }
+    }
+}
+
+void load_path_times(double depotSize) {
+    path_times.resize(noDeliveries * 2 + depotSize);
+    for (unsigned i = 0; i < allLocations.size(); i++) {
+        path_times[i].resize(noDeliveries * 2 + depotSize);
+        for (unsigned j = 0; j < allLocations.size(); j++) {
+            path_times[i][j] = find_distance_between_two_points(intersection_positions[allLocations[i]], intersection_positions[allLocations[j]]);
+        }
+    }
+}

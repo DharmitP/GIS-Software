@@ -1,0 +1,153 @@
+#include "m3.h"
+#include "m4.h"
+#include <chrono>
+#include <ctime>
+
+//This will the time we allocate for calculating each potential combination (in seconds)
+#define ALGORITHM_TIME 25.00
+
+//The initiation of our function time
+std::chrono::time_point<std::chrono::system_clock> start;
+
+//This will store all possible combinations of time/paths between all supplies/dropoffs
+//We will process this all at once near the beginning so as to not to have to constantly
+//calculate each path via Dijkstra's algorithm
+std::vector<std::vector<std::pair<double, std::vector<unsigned>>>> travel_times;
+
+
+//This function will create a valid reordering of our older combination of locations
+std::vector<unsigned> permutate(std::vector<unsigned> old, const std::vector<unsigned>& pickup,
+                                        const std::vector<unsigned>& dropoff);
+
+//This will be our calculation of each path given an initial ordering
+std::pair<double, std::vector<unsigned>> perturbate_path(std::vector<unsigned> order, 
+                                        const std::vector<unsigned>& pickup,
+                                        const std::vector<unsigned>& dropoff);      
+
+//Actual function for the problem
+std::vector<unsigned> traveling_courier(const std::vector<DeliveryInfo>& deliveries, 
+                                        const std::vector<unsigned>& depots, 
+                                        const float turn_penalty){
+    
+    //This will be the initial point; we begin our clock here to ensure we finish on time
+    start = std::chrono::system_clock::now();
+    
+    //Vectors to store intersection ids for pickup and dropoff locations
+    std::vector<unsigned> pickup(deliveries.size(), 0);
+    std::vector<unsigned> dropoff(deliveries.size(), 0);
+    std::vector<unsigned> order(deliveries.size() * 2, 0);
+
+    /*
+     * Initialize our travel time vector here
+     * First in pair is travel time, second is the path
+     * Initialize all times to -1 
+     */
+    
+    //Store pickup and dropoff locations
+    for(unsigned i = 0; i < deliveries.size(); i++){
+        pickup[i] = deliveries[i].pickUp;
+        dropoff[i] = deliveries[i].dropOff;
+        order[i] = deliveries[i].pickUp;
+    }
+
+    for(unsigned i = deliveries.size(); i < deliveries.size() * 2; i++){
+        order[i] = deliveries[i].dropOff;
+    }
+  
+    /*
+     * We have obtained one possible order above ^
+     * Make some more random valid orders and send them into "threads"
+     * Call the perturbate_path() function for each
+     */
+    
+    std::pair<double, std::vector<unsigned>> best_path_found = perturbate_path(order, pickup, dropoff);
+    
+    /*
+     * Given the best from all our threads, we must then compare their travel 
+     * times (first in the pair) and pick the best
+     * 
+     * After that retrieve the path (second in the pair) and return it 
+     * 
+     */
+    
+    return best_path_found.second;
+    
+}
+
+//2 opt algorithm where we check each combination and return the best we can given the time
+std::pair<double, std::vector<unsigned>> perturbate_path(std::vector<unsigned> order, 
+                                        const std::vector<unsigned>& pickup,
+                                        const std::vector<unsigned>& dropoff){                            
+    
+    /*
+     * We want to run it for 30s, intially without multithreading, and then after
+     * the 30s, we will have the most optimized path so far
+     */
+    std::chrono::time_point<std::chrono::system_clock> current = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed = current-start;
+    
+    bool first_run = true;
+    
+    //First holds shortest time, second holds shortest path
+    std::pair<double, std::vector<unsigned>> shortest_path;
+    
+    //Keep permutating and checking our order as long as we have time
+    do {
+    
+        double time_current_path = 0;
+        std::vector<unsigned> current_path;
+        //Go through the order, calculate the travel time 
+        for(unsigned i = 0; i < order.size()-1; i++){
+            //Grab the time and distance from this intersection to the next 
+            unsigned current = i;
+            unsigned next = i+1;
+
+            time_current_path += travel_times[current][next].first;
+            current_path.insert(current_path.end(), (travel_times[current][next].second).begin(), (travel_times[current][next].second).end());
+
+        }
+        //At this point, we now have the time and path for this combination
+        //We must now check to see if this is our best path
+        
+        //For our very first default combination
+        if (first_run) {
+            shortest_path.second = current_path;
+            shortest_path.first = time_current_path;    
+            first_run = false;
+        }
+        //Otherwise
+        else {
+            //If this permutation is faster than our quickest one, we'll use this
+            if (time_current_path < shortest_path.first) {
+                shortest_path.second = current_path;
+                shortest_path.first = time_current_path;                
+            }
+        }
+        
+        //Now that we've gone through and checked this permutation
+        //We should now permutate again and continue
+        order = permutate(order, pickup, dropoff);
+        
+        //Where are we in terms of time?
+        //Let's make sure we're below the time limit!
+        current = std::chrono::system_clock::now();
+        elapsed = current-start;
+        
+        //Don't forget the depots... :(
+        
+    }  while (elapsed.count() <= ALGORITHM_TIME);
+    
+    //After we've exhausted our allocated time, just send our best back
+    return shortest_path;
+    
+}
+
+//Permutation function
+std::vector<unsigned> permutate(std::vector<unsigned> old, const std::vector<unsigned>& pickup,
+                                        const std::vector<unsigned>& dropoff){
+    
+    std::vector<unsigned> new_order;
+    
+    return new_order;
+}
+
